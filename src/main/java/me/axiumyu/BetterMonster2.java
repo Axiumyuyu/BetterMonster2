@@ -1,16 +1,16 @@
 package me.axiumyu;
 
+import me.axiumyu.config.ConfigurationReader;
 import me.axiumyu.event.MobGetTarget;
 import org.bukkit.NamespacedKey;
-import org.bukkit.configuration.Configuration;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import static org.bukkit.Bukkit.getPluginManager;
 
 public final class BetterMonster2 extends JavaPlugin {
 
-    public static NamespacedKey axiumyuKey(String name){
-        return new NamespacedKey("axiumyu",name);
+    public static NamespacedKey axiumyuKey(String name) {
+        return new NamespacedKey("axiumyu", name);
     }
 
     public static final NamespacedKey STATE_TAG = axiumyuKey("state_tag");
@@ -27,14 +27,13 @@ public final class BetterMonster2 extends JavaPlugin {
 
     public static final int DAMAGE_CRITERIA = 10;
 
-    public static Configuration config;
-
     @Override
     public void onEnable() {
         // Plugin startup logic
         this.saveDefaultConfig();
-        config = this.getConfig();
+        new ConfigurationReader(this.getConfig());
         getPluginManager().registerEvents(new MobGetTarget(), this);
+
     }
 
     @Override

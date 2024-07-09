@@ -22,7 +22,8 @@ import java.util.Objects;
 
 import static me.axiumyu.BetterMonster2.*;
 import static me.axiumyu.DefalutAttackNumber.ATTACK_NUMBER;
-import static me.axiumyu.MobEqualizer.BALANCE_AMOUNT;
+import static me.axiumyu.config.ConfigurationReader.*;
+import static me.axiumyu.config.ConfigurationReader.BALANCE_AMOUNT;
 
 public class MobGetTarget implements Listener {
 
@@ -35,10 +36,18 @@ public class MobGetTarget implements Listener {
             final Entity targetEntity = pe.getTargetEntity();
             final Entity entity = pe.getEntity();
             PersistentDataContainer entityIc = entity.getPersistentDataContainer();
-            if ((targetEntity instanceof Player && entity instanceof Mob && !(entity instanceof Boss)) && !(targetEntity.getUniqueId().toString().equals(entityIc.get(SOURCE, PersistentDataType.STRING)))) {
+            if (targetEntity instanceof Player &&
+                    entity instanceof Mob &&
+                    !(entity instanceof Boss) &&
+                    !targetEntity.getUniqueId().toString().equals(entityIc.get(SOURCE, PersistentDataType.STRING)) &&
+                    entity.isValid() &&
+                    !entity.isDead() &&
+                    !targetEntity.isInvulnerable()) {
+
                 final Mob mob = (Mob) entity;
                 final Player pl = (Player) targetEntity;
-                if (!entityIc.has(STATE_TAG, PersistentDataType.STRING) || Objects.equals(entityIc.get(STATE_TAG, PersistentDataType.STRING), recovered)) {
+                if (!entityIc.has(STATE_TAG, PersistentDataType.STRING) ||
+                        Objects.equals(entityIc.get(STATE_TAG, PersistentDataType.STRING), recovered)) {
                     final double originMaxHealth = mob.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue();
                     mob.getPersistentDataContainer().set(MAX_HEALTH, PersistentDataType.DOUBLE, originMaxHealth);
                     final double originAttack = mob.getAttribute(Attribute.GENERIC_ATTACK_DAMAGE).getValue();
@@ -49,26 +58,25 @@ public class MobGetTarget implements Listener {
                     if (health == 0) return;
                     final double absorption = pl.getAttribute(Attribute.GENERIC_MAX_ABSORPTION).getValue();
                     if (armorVal != 0) {
-                        final double healthRate = Math.max(armorVal / ARMOR_CRITERIA, (health + (absorption / 2)) / HEALTH_CRITERIA);
-                        final double attackRate = getMaxAttackValue(pl) / DAMAGE_CRITERIA;
+                        final double lifeRate = (((armorVal / ARMOR_CRITERIA) * armorRate) + ((health + (absorption*absorptionRate)) / HEALTH_CRITERIA) * healthRate) / (armorRate + healthRate);
+                        final double attackRate = getMaxAttackValueInHotbar(pl) / DAMAGE_CRITERIA;
 
                         AttributeInstance mobAttack = mob.getAttribute(Attribute.GENERIC_ATTACK_DAMAGE);
-                        mobAttack.setBaseValue(mobAttack.getBaseValue() * healthRate * BALANCE_AMOUNT.getOrDefault(mob.getType(), 1.0));
+                        mobAttack.setBaseValue(mobAttack.getBaseValue() * lifeRate * getBalanced(mob));
 
                         AttributeInstance mobHealth = mob.getAttribute(Attribute.GENERIC_MAX_HEALTH);
-                        final double finalHealth = mobHealth.getBaseValue() * attackRate * BALANCE_AMOUNT.getOrDefault(mob.getType(), 1.0);
+                        final double finalHealth = mobHealth.getBaseValue() * attackRate * getBalanced(mob);
                         mobHealth.setBaseValue(finalHealth);
                         mob.setHealth(finalHealth);
 
                         mob.getPersistentDataContainer().set(STATE_TAG, PersistentDataType.STRING, modified);
                         mob.getPersistentDataContainer().set(SOURCE, PersistentDataType.STRING, pl.getUniqueId().toString());
-                        pl.sendMessage("Health: " + healthRate + " Attack: " + attackRate);
-                        if (healthRate >= 1 || attackRate >= 1 && !(mob instanceof Warden)) {
-                            pl.sendMessage("start task");
-                            new MobMonitor(mob).runTaskTimer(getPlugin(BetterMonster2.class), 0, 40);
+                        if (lifeRate >= 1 || attackRate >= 1 && !(mob instanceof Warden)) {
+                            new MobMonitor(mob).runTaskTimer(getPlugin(BetterMonster2.class), 0, 20);
                         }
                     }
-                } else if (mob.getPersistentDataContainer().get(STATE_TAG, PersistentDataType.STRING) != null && mob.getPersistentDataContainer().get(STATE_TAG, PersistentDataType.STRING).equals(modified)) {
+                } else if (mob.getPersistentDataContainer().get(STATE_TAG, PersistentDataType.STRING) != null &&
+                        mob.getPersistentDataContainer().get(STATE_TAG, PersistentDataType.STRING).equals(modified)) {
 
                     Double maxHealth = mob.getPersistentDataContainer().get(MAX_HEALTH, PersistentDataType.DOUBLE) == null ? 0.0 : mob.getPersistentDataContainer().get(MAX_HEALTH, PersistentDataType.DOUBLE);
                     mob.getAttribute(Attribute.GENERIC_MAX_HEALTH).setBaseValue(maxHealth);
@@ -78,31 +86,35 @@ public class MobGetTarget implements Listener {
                     mob.getAttribute(Attribute.GENERIC_ATTACK_DAMAGE).setBaseValue(attack);
                     mob.getPersistentDataContainer().set(SOURCE, PersistentDataType.STRING, recovered);
                 }
-//                else {
-//                    entity.getWorld().sendMessage(text("发生了未知错误。。。"));
-//                }
             }
         } catch (IllegalArgumentException | IllegalStateException | NullPointerException ignore) {
         }
     }
 
+    private static Double getBalanced(Mob mob) {
+        return BALANCE_AMOUNT.getOrDefault(mob.getType(), 1.0);
+    }
+
     //获得热键栏中攻击力最大的物品值
-    private static double getMaxAttackValue(Player pl) {
-        double maxValue = 0;
+    private static double getMaxAttackValueInHotbar(Player pl) {
+        double maxValue = pl.getAttribute(Attribute.GENERIC_ATTACK_DAMAGE).getValue();
         for (int i = 0; i < 8; i++) {
             ItemStack item = pl.getInventory().getItem(i);
             if (item == null) continue;
             final Collection<AttributeModifier> attributeModifiers = item.getItemMeta().getAttributeModifiers(Attribute.GENERIC_ATTACK_DAMAGE);
-            if (attributeModifiers == null) continue;
-            double value = getSingleFinalValue(item.getType(), pl.getAttribute(Attribute.GENERIC_ATTACK_DAMAGE).getValue(), attributeModifiers);
+            double value;
+            if (attributeModifiers == null) {
+                value = ATTACK_NUMBER.getOrDefault(item.getType(), pl.getAttribute(Attribute.GENERIC_ATTACK_DAMAGE).getValue()).doubleValue();
+            } else {
+                value = getSingleFinalValue(item.getType(), pl.getAttribute(Attribute.GENERIC_ATTACK_DAMAGE).getValue(), attributeModifiers);
+            }
             Map<Enchantment, Integer> enchantments = item.getEnchantments();
             if (enchantments.containsKey(Enchantment.SHARPNESS)) {
-                value += enchantments.get(Enchantment.SHARPNESS) * 0.5 + 0.5;
+                value += enchantments.get(Enchantment.SHARPNESS) * 0.25 + 0.25;
             }
-
             if (value > maxValue) maxValue = value;
         }
-        return maxValue;
+        return maxValue + 1.5;
     }
 
     //计算单个物品的Attribute总值
